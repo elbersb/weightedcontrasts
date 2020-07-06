@@ -1,0 +1,159 @@
+---
+title: "A Reanalysis of Holford (1983)"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{A Reanalysis of Holford (1983)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+This is an reanalysis of an example provided in Theodore R. Holford, 1983, [_The Estimation of Age, Period and Cohort Effects for Vital Rates_](https://www.jstor.org/stable/2531004), Biometrics 39(2): 311-324. The data are prostate cancer deaths for nonwhites in the U.S. Age and period are grouped into five-year intervals.
+
+```{r message=FALSE, warning=FALSE}
+library("dplyr")
+library("ggplot2")
+library("texreg")
+library("weightedcontrasts")
+
+data("prostate") # provided with weightedcontrasts package
+d <- prostate %>%
+    mutate(rate = 100000 * deaths / population,
+        log_rate = log(rate)) %>%
+    mutate(across(c(age, period, cohort), as.factor))
+```
+
+## Replication: Figure 2
+
+```{r}
+m_ac <- glm(deaths ~ age + cohort + offset(log(d$population)), data = d, family = poisson())
+
+p <- d %>%
+    ggplot(aes(x = cohort, y = log_rate, color = age, group = age)) +
+        geom_point() + geom_line() +
+        geom_point(data = mutate(d, pred = log(predict(m_ac, type = "response") / population * 100000)),
+            aes(x = cohort, y = pred), shape = 4, size = 2)
+show(p)
+```
+
+## Helper functions
+
+```{r}
+get_deviations <- function(model, set, contrasts) {
+    extract_coefs <- coef(model)[grepl(set, names(coef(model)))]
+    extract_coefs <- extract_coefs[2:length(extract_coefs)]
+    deviations <- contrasts[, 2:(1 + length(extract_coefs))] %*% extract_coefs
+    deviations[, 1]
+}
+
+get_linear_contrast <- function(vector) {
+    1:n_distinct(vector) - 1/2 * n_distinct(vector) - 1/2
+}
+
+get_total_effect <- function(contrasts, linear_coef, nonlinear_coefs) {
+    linear_contrast <- contrasts[, 1]
+    nonlinear_contrasts <- contrasts[, 2:ncol(contrasts)]
+    linear_contrast * linear_coef + nonlinear_contrasts %*% nonlinear_coefs
+}
+
+```
+
+## Holford's original model
+
+```{r}
+data_holford <- as_tibble(d)
+
+# use contr.poly but adjust for the linear term
+contrasts(data_holford$age) <- contr.poly
+contrasts(data_holford$age)[, 1] <- get_linear_contrast(data_holford$age)
+contrasts(data_holford$period) <- contr.poly
+contrasts(data_holford$period)[, 1] <- get_linear_contrast(data_holford$period)
+contrasts(data_holford$cohort) <- contr.poly
+contrasts(data_holford$cohort)[, 1] <- get_linear_contrast(data_holford$cohort)
+
+holford <- glm(deaths ~ age + cohort + period + offset(log(data_holford$population)),
+    data = data_holford, family = poisson())
+
+# get deviations from linear trend and age/cohort linear effects
+# (these are the true linear effects when period linear effect = 0)
+holford_age <- get_deviations(holford, "^age", contrasts(data_holford$age))
+holford_period <- get_deviations(holford, "^period", contrasts(data_holford$period))
+holford_cohort <- get_deviations(holford, "^cohort", contrasts(data_holford$cohort))
+holford_age_linear <- coef(holford)["age.L"]
+holford_cohort_linear <- coef(holford)["cohort.L"]
+```
+
+## Corrected model
+
+```{r}
+data_corrected <- as_tibble(d)
+
+contrasts(data_corrected$age) <- contr.poly.weighted(data_corrected$age, width = 5)
+contrasts(data_corrected$period) <- contr.poly.weighted(data_corrected$period, width = 5)
+contrasts(data_corrected$cohort) <- contr.poly.weighted(data_corrected$cohort, width = 5)
+# zero out the period linear effect
+contrasts(data_corrected$period)[, 1] <- 0
+
+corrected <- glm(deaths ~ age + cohort + period + offset(log(data_corrected$population)),
+    data = data_corrected, family = poisson())
+
+# get deviations from linear trend and age/cohort linear effects
+# (these are the true linear effects when period linear effect = 0)
+corrected_age <- get_deviations(corrected, "^age", contrasts(data_corrected$age))
+corrected_period <- get_deviations(corrected, "^period", contrasts(data_corrected$period))
+corrected_cohort <- get_deviations(corrected, "^cohort", contrasts(data_corrected$cohort))
+corrected_age_linear <- coef(corrected)["age.L"]
+corrected_cohort_linear <- coef(corrected)["cohort.L"]
+```
+
+## More parsimonious model
+
+```{r}
+designmatrix <- model.matrix(deaths ~ age + cohort + period + offset(log(data_corrected$population)),
+    data = data_corrected)
+designmatrix <- designmatrix[, c("age.L", "cohort.L", "age.Q", "cohort.Q", "period.Q")]
+corrected_p <- glm(data_corrected$deaths ~ designmatrix + offset(log(data_corrected$population)),
+    family = poisson())
+
+# almost identical fit!
+cor(predict(corrected, type = "response"), predict(corrected_p, type = "response"))
+```
+
+## Comparison
+
+```{r}
+screenreg(list(holford, corrected), single.row = TRUE)
+```
+
+```{r}
+# does not affect age and period terms
+all.equal(holford_age, corrected_age)
+all.equal(holford_period, corrected_period)
+
+# comparison of cohort non-linear effects
+p <- tibble(effect = c(corrected_cohort, holford_cohort),
+    cohort = rep(names(corrected_cohort), 2),
+    which = c(rep("This paper", length(corrected_cohort)),
+        rep("Holford 1983", length(holford_cohort)))) %>%
+    mutate(which = factor(which, levels = c("This paper", "Holford 1983"))) %>%
+    ggplot(aes(x = cohort, y = effect, group = which, linetype = which)) +
+    geom_point() + geom_line() +
+    geom_hline(yintercept = 0) +
+    labs(y = "Non-linear effect", x = "Cohort", group = "", linetype = "") +
+    theme_bw()
+p
+```
+
+
+```{r, include = FALSE}
+# ggsave("holford1983.pdf", p, height = 4)
+```
+
+
+

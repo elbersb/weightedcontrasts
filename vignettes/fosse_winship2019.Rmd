@@ -1,0 +1,222 @@
+---
+title: "A Reanalysis of Fosse and Winship (2019)"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{A Reanalysis of Fosse and Winship (2019)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+This is a reanalysis of an example provided in Ethan Fosse and Christopher Winship, 2019, [_Analyzing Age-Period-Cohort Data: A Review and Critique_](https://www.annualreviews.org/doi/abs/10.1146/annurev-soc-073018-022616), Annual Review of Sociology 45:467–92. The  example is based on General Social Survey (GSS) data for N=23,825 respondents. The outcome is the number of words correct on a vocabulary quiz of ten items (min: 0, max: 10, sd: 2.14). Age and period are grouped into five-year intervals.
+
+## Load packages and data
+
+```{r message=FALSE, warning=FALSE}
+library("dplyr")
+library("ggplot2")
+library("texreg")
+library("weightedcontrasts")
+
+library("apcR") # required for dataset, get here: https://scholar.harvard.edu/apc/software-0
+data("wordsum")
+d <- as_tibble(wordsum)
+```
+
+## Define helper functions
+
+```{r}
+get_deviations_w_intercept <- function(model, set, contrasts) {
+    extract_coefs <- coef(model)[grepl(set, names(coef(model)))]
+    extract_coefs <- extract_coefs[2:length(extract_coefs)]
+    extract_coefs[is.na(extract_coefs)] <- 0
+    deviations <- contrasts[, 2:(1 + length(extract_coefs))] %*% extract_coefs
+    coef(model)[1] + deviations[, 1]
+}
+
+get_total_effect <- function(contrasts, linear_coef, nonlinear_coefs) {
+    linear_contrast <- contrasts[, 1]
+    nonlinear_contrasts <- contrasts[, 2:ncol(contrasts)]
+    linear_contrast * linear_coef + nonlinear_contrasts %*% nonlinear_coefs
+}
+```
+
+## Replicating Fosse & Winship's original model
+
+```{r}
+data_fw <- as_tibble(d)
+
+contrasts(data_fw$a) <- apcR::create.poly
+contrasts(data_fw$p) <- apcR::create.poly
+contrasts(data_fw$c) <- apcR::create.poly
+# zero out the period linear effect
+contrasts(data_fw$p)[, 1] <- 0
+
+fw <- lm(wordsum ~ a + c + p, data = data_fw)
+
+# get deviations from linear trend and age/cohort linear effects
+# (these are the true linear effects when period linear effect = 0)
+fw_age <- get_deviations_w_intercept(fw, "^a", contrasts(data_fw$a))
+fw_period <- get_deviations_w_intercept(fw, "^p", contrasts(data_fw$p))
+fw_cohort <- get_deviations_w_intercept(fw, "^c", contrasts(data_fw$c))
+fw_theta1 <- coef(fw)["a.L"]
+fw_theta2 <- coef(fw)["c.L"]
+```
+
+## Using weighted orthogonal contrasts
+
+```{r}
+data_corrected <- as_tibble(d)
+
+contrasts(data_corrected$a) <- contr.poly.weighted(data_corrected$a, width = 5)
+contrasts(data_corrected$p) <- contr.poly.weighted(data_corrected$p, width = 5)
+contrasts(data_corrected$c) <- contr.poly.weighted(data_corrected$c, width = 5)
+# zero out the period linear effect
+contrasts(data_corrected$p)[, 1] <- 0
+
+corrected <- lm(wordsum ~ a + c + p, data = data_corrected)
+
+# get deviations from linear trend and age/cohort linear effects
+# (these are the true linear effects when period linear effect = 0)
+corrected_age <- get_deviations_w_intercept(corrected, "^a", contrasts(data_corrected$a))
+corrected_period <- get_deviations_w_intercept(corrected, "^p", contrasts(data_corrected$p))
+corrected_cohort <- get_deviations_w_intercept(corrected, "^c", contrasts(data_corrected$c))
+corrected_theta1 <- coef(corrected)["a.L"]
+corrected_theta2 <- coef(corrected)["c.L"]
+```
+
+## Comparison
+
+The model estimates can be seen in this table:
+
+```{r}
+screenreg(list(fw, corrected), single.row = TRUE)
+```
+
+We can also plot the non-linear effects:
+
+```{r}
+to_plot <- bind_rows(
+    tibble(effect = c(corrected_age, corrected_period, corrected_cohort),
+        year = c(names(corrected_age), names(corrected_period), names(corrected_cohort)),
+        apc = c(rep("Age", length(corrected_age)),
+            rep("Period", length(corrected_period)),
+            rep("Cohort", length(corrected_cohort))),
+        which = "This paper"),
+    tibble(effect = c(fw_age, fw_period, fw_cohort),
+        year = c(names(fw_age), names(fw_period), names(fw_cohort)),
+        apc = c(rep("Age", length(fw_age)),
+            rep("Period", length(fw_period)),
+            rep("Cohort", length(fw_cohort))),
+        which = "Fosse & Winship 2019")) %>%
+    mutate(which = factor(which, levels = c("This paper", "Fosse & Winship 2019")),
+        apc = factor(apc, levels = c("Age", "Period", "Cohort")),
+        year = as.numeric(year))
+
+# comparison of non-linear effects
+p <- to_plot %>%
+    ggplot(aes(x = year, y = effect, group = which, linetype = which)) +
+    facet_wrap("apc", scales = "free_x") +
+    geom_point() + geom_line() +
+    labs(y = "Non-linear effect", group = "", linetype = "") +
+    theme_bw() +
+    theme(legend.position = "bottom", axis.title.x = element_blank())
+p
+```
+
+```{r, include = FALSE}
+# ggsave("fosse_winship2019.pdf", p, height = 4, width = 7)
+```
+
+## 2D-APC Plot
+
+```{r}
+two2d_plot <- function(theta1, theta2) {
+    sum_thetas = abs(theta2 - theta1)
+    limits = c(-sum_thetas, sum_thetas)
+
+    ggplot() +
+        geom_abline(aes(intercept = theta1, slope = -1),
+            size = 1, color = "#1080BA") +
+        geom_hline(yintercept = 0, linetype = 2, color = "#3C4650") +
+        geom_hline(yintercept = -(theta2 - theta1), linetype = 2, color = "#3C4650") +
+        geom_vline(xintercept = 0, linetype = 2, color = "#3C4650") +
+        scale_y_continuous(expression(alpha),
+            limits = limits * 1.2,
+            sec.axis = sec_axis(~.+(theta2 - theta1), name = expression(gamma))) +
+        scale_x_continuous(expression(pi),
+            limits = limits * 1.1,
+            sec.axis = dup_axis()) +
+        theme_bw() +
+        theme(text = element_text(size = 10),
+            axis.title.y.left = element_text(angle = 0, vjust = 0.5),
+            axis.title.y.right = element_text(angle = 0, vjust = 0.5))
+}
+
+two2d_plot(fw_theta1, fw_theta2)
+two2d_plot(corrected_theta1, corrected_theta2)
+```
+
+```{r, include = FALSE}
+# ggsave("fosse_winship2019_2dapc.pdf", p, height = 3, width = 4)
+```
+
+## Obtaining smoothed estimates
+
+```{r}
+devs <- list()
+for (i in seq(ncol(contrasts(data_corrected$c)), 3)) {
+    contrasts(data_corrected$c)[, i] <- 0
+    reduced <- lm(wordsum ~ a + c + p, data = data_corrected)
+    devs_i <- get_deviations_w_intercept(reduced, "^c", contrasts(data_corrected$c))
+    devs[[i]] <- tibble(degree = i - 1, year = names(devs_i), deviations = devs_i)
+}
+
+cohort_by_degree <- bind_rows(devs) %>%
+    bind_rows(tibble(degree = ncol(contrasts(data_corrected$c)),
+        year = names(corrected_cohort),
+        deviations = corrected_cohort)) %>%
+    mutate(year = as.numeric(year))
+
+p <- cohort_by_degree %>%
+    ggplot(aes(x = as.numeric(year), y = deviations)) +
+    facet_wrap("degree") +
+    geom_point() + geom_line() +
+    theme_bw()
+p
+```
+
+## Monotonicity constraint for cohort
+
+```{r}
+choose_degree <- 5
+non_lins <- filter(cohort_by_degree, degree == choose_degree)$deviations
+min_slope <- -min(diff(non_lins)) / 5
+total_cohort <- non_lins + contrasts(data_corrected$c)[, 1] * min_slope
+
+cohort_df <- filter(cohort_by_degree, degree == choose_degree) %>%
+    transmute(effect = deviations,
+        year,
+        which = paste0("Non-linear only, poly. of degree ", degree)) %>%
+    bind_rows(tibble(effect = total_cohort,
+        year = as.numeric(names(total_cohort)),
+        which = "Under monotonicity constraint"))
+
+p <- cohort_df %>%
+    ggplot(aes(x = year, y = effect, linetype = which)) +
+    geom_point() + geom_line() +
+    theme_bw() +
+    theme(text = element_text(size = 12), legend.position = "bottom") +
+    labs(x = "Cohort", y = "Effect", linetype = "")
+p
+```
+
+```{r, include = FALSE}
+# ggsave("fosse_winship2019_monotonicity.pdf", p, height = 4, width = 6)
+```
