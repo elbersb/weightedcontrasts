@@ -10,11 +10,15 @@ vignette: >
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>"
+  comment = "#>",
+  fig.width = 6,
+  fig.height = 4
 )
 ```
 
 This is a reanalysis of an example provided in Ethan Fosse and Christopher Winship, 2019, [_Analyzing Age-Period-Cohort Data: A Review and Critique_](https://www.annualreviews.org/doi/abs/10.1146/annurev-soc-073018-022616), Annual Review of Sociology 45:467–92. The  example is based on General Social Survey (GSS) data for N=23,825 respondents. The outcome is the number of words correct on a vocabulary quiz of ten items (min: 0, max: 10, sd: 2.14). Age and period are grouped into five-year intervals.
+
+For details on these results, see [this working paper](https://osf.io/preprints/socarxiv/xrbgv/).
 
 ## Load packages and data
 
@@ -31,6 +35,10 @@ d <- as_tibble(wordsum)
 
 ## Define helper functions
 
+The first helper function extracts the non-linear effects from the model, while the second
+function computes a total (linear and non-linear) effect. The third function simply
+constructs a data frame from given age, period, and cohort effects, and is used for plotting.
+
 ```{r}
 get_deviations_w_intercept <- function(model, set, contrasts) {
     extract_coefs <- coef(model)[grepl(set, names(coef(model)))]
@@ -45,9 +53,21 @@ get_total_effect <- function(contrasts, linear_coef, nonlinear_coefs) {
     nonlinear_contrasts <- contrasts[, 2:ncol(contrasts)]
     linear_contrast * linear_coef + nonlinear_contrasts %*% nonlinear_coefs
 }
+
+get_apc_df <- function(age, period, cohort) {
+    tibble(effect = c(age, period, cohort),
+        year = c(names(age), names(period), names(cohort)),
+        apc = c(rep("Age", length(age)),
+            rep("Period", length(period)),
+            rep("Cohort", length(cohort))))
+}
 ```
 
 ## Replicating Fosse & Winship's original model
+
+We first replicate Fosse and Winship's original model. The function `apcR::create.poly` uses
+unweighted orthogonal polynomials. We then use one of the helper functions defined above to extract
+the identified non-linear effects.
 
 ```{r}
 data_fw <- as_tibble(d)
@@ -71,6 +91,10 @@ fw_theta2 <- coef(fw)["c.L"]
 
 ## Using weighted orthogonal contrasts
 
+This code is very similar, but uses the function `contr.poly.weighted` from the [`weightedcontrasts`](https://github.com/elbersb/weightedcontrasts) package.
+We also specify the width of the age groups (5-year intervals in this case), to obtain
+an interpretable linear term.
+
 ```{r}
 data_corrected <- as_tibble(d)
 
@@ -93,28 +117,22 @@ corrected_theta2 <- coef(corrected)["c.L"]
 
 ## Comparison
 
-The model estimates can be seen in this table:
+The model estimates can be seen in this table. The differences arise from the use
+of unweighted vs. weighted orthogonal polynomials, and from the fact that the linear terms
+are interpretable as the change in one year in the corrected model.
 
-```{r}
-screenreg(list(fw, corrected), single.row = TRUE)
+```{r results="asis"}
+htmlreg(list(fw, corrected), single.row = TRUE)
 ```
 
 We can also plot the non-linear effects:
 
 ```{r}
 to_plot <- bind_rows(
-    tibble(effect = c(corrected_age, corrected_period, corrected_cohort),
-        year = c(names(corrected_age), names(corrected_period), names(corrected_cohort)),
-        apc = c(rep("Age", length(corrected_age)),
-            rep("Period", length(corrected_period)),
-            rep("Cohort", length(corrected_cohort))),
-        which = "This paper"),
-    tibble(effect = c(fw_age, fw_period, fw_cohort),
-        year = c(names(fw_age), names(fw_period), names(fw_cohort)),
-        apc = c(rep("Age", length(fw_age)),
-            rep("Period", length(fw_period)),
-            rep("Cohort", length(fw_cohort))),
-        which = "Fosse & Winship 2019")) %>%
+    get_apc_df(corrected_age, corrected_period, corrected_cohort) %>%
+        mutate(which = "This paper"),
+    get_apc_df(fw_age, fw_period, fw_cohort) %>%
+        mutate(which = "Fosse & Winship 2019")) %>%
     mutate(which = factor(which, levels = c("This paper", "Fosse & Winship 2019")),
         apc = factor(apc, levels = c("Age", "Period", "Cohort")),
         year = as.numeric(year))
@@ -135,6 +153,9 @@ p
 ```
 
 ## 2D-APC Plot
+
+Fosse and Winship introduced the idea of a 2D-APC plot in their work. These plots are reproduced
+here for the two sets of results.
 
 ```{r}
 two2d_plot <- function(theta1, theta2) {
@@ -169,7 +190,11 @@ two2d_plot(corrected_theta1, corrected_theta2)
 
 ## Obtaining smoothed estimates
 
-```{r}
+Orthogonal polynomials can be used as simple smoothers, by simply dropping higher-order
+polynomial terms. The figure below shows cohort non-linear effects when modeled using different degrees,
+from low to high. The most complex model will use polynomials of degree 19.
+
+```{r fig.width = 8}
 devs <- list()
 for (i in seq(ncol(contrasts(data_corrected$c)), 3)) {
     contrasts(data_corrected$c)[, i] <- 0
@@ -193,6 +218,11 @@ p
 ```
 
 ## Monotonicity constraint for cohort
+
+Smoothed estimates are desirable when monotonicity constraints are specified. We choose
+here, somewhat arbitrarily, a polynomial of degree 5, and then specify a monotonicity constraint
+for the total cohort effect. The dashed line shows the minimum total cohort effect under the assumption
+that it is monotonically increasing.
 
 ```{r}
 choose_degree <- 5

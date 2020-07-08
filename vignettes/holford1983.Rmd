@@ -10,11 +10,17 @@ vignette: >
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>"
+  comment = "#>",
+  fig.width = 6,
+  fig.height = 4
 )
 ```
 
 This is an reanalysis of an example provided in Theodore R. Holford, 1983, [_The Estimation of Age, Period and Cohort Effects for Vital Rates_](https://www.jstor.org/stable/2531004), Biometrics 39(2): 311-324. The data are prostate cancer deaths for nonwhites in the U.S. Age and period are grouped into five-year intervals.
+
+For details on these results, see [this working paper](https://osf.io/preprints/socarxiv/xrbgv/).
+
+## Load packages and data
 
 ```{r message=FALSE, warning=FALSE}
 library("dplyr")
@@ -31,18 +37,25 @@ d <- prostate %>%
 
 ## Replication: Figure 2
 
+This is simply a reconstruction of Figure 2 in Holford (1983).
+
 ```{r}
 m_ac <- glm(deaths ~ age + cohort + offset(log(d$population)), data = d, family = poisson())
+d_pred <- mutate(d, pred = log(predict(m_ac, type = "response") / population * 100000))
 
 p <- d %>%
     ggplot(aes(x = cohort, y = log_rate, color = age, group = age)) +
         geom_point() + geom_line() +
-        geom_point(data = mutate(d, pred = log(predict(m_ac, type = "response") / population * 100000)),
-            aes(x = cohort, y = pred), shape = 4, size = 2)
-show(p)
+        geom_point(data = d_pred, aes(x = cohort, y = pred), shape = 4, size = 2) +
+        theme_bw()
+p
 ```
 
 ## Helper functions
+
+The first helper function extracts the non-linear effects from the model, while the second
+function computes a total (linear and non-linear) effect. The last function is used to override
+the linear contrast below; this is done to obtain exactly the same point estimates as Holford.
 
 ```{r}
 get_deviations <- function(model, set, contrasts) {
@@ -52,19 +65,22 @@ get_deviations <- function(model, set, contrasts) {
     deviations[, 1]
 }
 
-get_linear_contrast <- function(vector) {
-    1:n_distinct(vector) - 1/2 * n_distinct(vector) - 1/2
-}
-
 get_total_effect <- function(contrasts, linear_coef, nonlinear_coefs) {
     linear_contrast <- contrasts[, 1]
     nonlinear_contrasts <- contrasts[, 2:ncol(contrasts)]
     linear_contrast * linear_coef + nonlinear_contrasts %*% nonlinear_coefs
 }
 
+get_linear_contrast <- function(vector) {
+    1:n_distinct(vector) - 1/2 * n_distinct(vector) - 1/2
+}
 ```
 
 ## Holford's original model
+
+We first replicate Holford's original model. The built-in R function `contr.poly` uses
+unweighted orthogonal polynomials. We then use one of the helper functions defined above to extract
+the identified non-linear effects.
 
 ```{r}
 data_holford <- as_tibble(d)
@@ -91,6 +107,10 @@ holford_cohort_linear <- coef(holford)["cohort.L"]
 
 ## Corrected model
 
+This code is very similar, but uses the function `contr.poly.weighted` from the [`weightedcontrasts`](https://github.com/elbersb/weightedcontrasts) package.
+We also specify the width of the age groups (5-year intervals in this case), to obtain
+an interpretable linear term.
+
 ```{r}
 data_corrected <- as_tibble(d)
 
@@ -114,21 +134,23 @@ corrected_cohort_linear <- coef(corrected)["cohort.L"]
 
 ## More parsimonious model
 
+By dropping higher-order polynomial terms, we can fit a much more parsimonious model. The model
+that contains only linear and quadratic effects fits almost equally well.
+
 ```{r}
 designmatrix <- model.matrix(deaths ~ age + cohort + period + offset(log(data_corrected$population)),
     data = data_corrected)
-designmatrix <- designmatrix[, c("age.L", "cohort.L", "age.Q", "cohort.Q", "period.Q")]
-corrected_p <- glm(data_corrected$deaths ~ designmatrix + offset(log(data_corrected$population)),
-    family = poisson())
-
-# almost identical fit!
-cor(predict(corrected, type = "response"), predict(corrected_p, type = "response"))
+d_reduced <- designmatrix[, c("age.L", "cohort.L", "age.Q", "cohort.Q", "period.Q")] %>%
+    as_tibble() %>%
+    mutate(deaths = d$deaths, population = d$population)
+corrected_p <- glm(deaths ~ age.L + cohort.L + age.Q + cohort.Q + period.Q +
+    offset(log(population)), data = d_reduced, family = poisson())
 ```
 
 ## Comparison
 
-```{r}
-screenreg(list(holford, corrected), single.row = TRUE)
+```{r results="asis"}
+htmlreg(list(holford, corrected, corrected_p), single.row = TRUE)
 ```
 
 ```{r}
@@ -149,7 +171,6 @@ p <- tibble(effect = c(corrected_cohort, holford_cohort),
     theme_bw()
 p
 ```
-
 
 ```{r, include = FALSE}
 # ggsave("holford1983.pdf", p, height = 4)
