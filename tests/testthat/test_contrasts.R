@@ -85,7 +85,3 @@ test_that("same predictions", {
 
     expect_equal(predict(m1), predict(m2))
 })
-
-test_that("error when weights do not sum to 1", {
-    expect_error(contr.poly.weighted(factor(1:3), weights = c(.1)))
-})

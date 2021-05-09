@@ -13,20 +13,20 @@
 #' @export
 contr.poly.weighted <- function (f, weights = NULL, width = 1) {
     if (!is.factor(f))
-        stop(gettextf("f needs to be a factor"), domain = NA)
+        stop("f needs to be a factor")
 
     n <- length(levels(f))
+
     if (n < 2)
-        stop(gettextf("contrasts not defined for %d degrees of freedom", n - 1), domain = NA)
+        stop(sprintf("contrasts not defined for %d degrees of freedom", n - 1))
     if (n > 95)
-        stop(gettextf("orthogonal polynomials cannot be represented accurately enough for %d degrees of freedom",
-                      n - 1), domain = NA)
+        stop(sprintf("orthogonal polynomials cannot be represented accurately enough for %d degrees of freedom (max. is 95)",
+                      n - 1))
 
     if (is.null(weights)) {
        weights <- as.numeric(table(f)) / length(f)
     } else {
-        if (all.equal(sum(weights), 1) != TRUE)
-            stop(gettextf("weights need to sum to 1"), domain = NA)
+       weights <- weights / sum(weights)
     }
     y <- 1:n - sum(1:n * weights)
     X <- sqrt(weights) * outer(y, seq_len(n) - 1, "^")

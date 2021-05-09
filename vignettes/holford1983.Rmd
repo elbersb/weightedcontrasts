@@ -61,7 +61,7 @@ the linear contrast below; this is done to obtain exactly the same point estimat
 get_deviations <- function(model, set, contrasts) {
     extract_coefs <- coef(model)[grepl(set, names(coef(model)))]
     extract_coefs <- extract_coefs[2:length(extract_coefs)]
-    deviations <- contrasts[, 2:(1 + length(extract_coefs))] %*% extract_coefs
+    deviations <- contrasts[, 2:(1 + length(extract_coefs)), drop = FALSE] %*% extract_coefs
     deviations[, 1]
 }
 
@@ -140,10 +140,10 @@ that contains only linear and quadratic effects fits almost equally well.
 ```{r}
 designmatrix <- model.matrix(deaths ~ age + cohort + period + offset(log(data_corrected$population)),
     data = data_corrected)
-d_reduced <- designmatrix[, c("age.L", "cohort.L", "age.Q", "cohort.Q", "period.Q")] %>%
+d_reduced <- designmatrix[, c("age.L", "cohort.L", "period.L", "age.Q", "cohort.Q", "period.Q")] %>%
     as_tibble() %>%
     mutate(deaths = d$deaths, population = d$population)
-corrected_p <- glm(deaths ~ age.L + cohort.L + age.Q + cohort.Q + period.Q +
+corrected_p <- glm(deaths ~ age.L + cohort.L + period.L + age.Q + cohort.Q + period.Q +
     offset(log(population)), data = d_reduced, family = poisson())
 ```
 
@@ -175,6 +175,3 @@ p
 ```{r, include = FALSE}
 # ggsave("holford1983.pdf", p, height = 4)
 ```
-
-
-

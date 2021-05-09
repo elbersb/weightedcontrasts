@@ -7,8 +7,7 @@
 
 [![CRAN
 Version](https://www.r-pkg.org/badges/version/weightedcontrasts)](https://CRAN.R-project.org/package=weightedcontrasts)
-[![Travis build
-status](https://travis-ci.com/elbersb/weightedcontrasts.svg?branch=master)](https://travis-ci.com/elbersb/weightedcontrasts)
+[![R-CMD-check](https://github.com/elbersb/weightedcontrasts/workflows/R-CMD-check/badge.svg)](https://github.com/elbersb/weightedcontrasts/actions)
 [![Codecov test
 coverage](https://codecov.io/gh/elbersb/weightedcontrasts/branch/master/graph/badge.svg)](https://codecov.io/gh/elbersb/weightedcontrasts?branch=master)
 <!-- badges: end -->
@@ -18,12 +17,12 @@ polynomial contrasts to unbalanced data. The function is general, but
 the examples are specific to age-period-cohort models. Currently, the
 package contains the following:
 
-  - The function `contr.poly.weighted`
-  - The dataset `prostate` from Holford 1983 (Table 2)
-  - A vignette that reanalyzes [the example given in
-    Holford 1983](https://htmlpreview.github.io/?https://github.com/elbersb/weightedcontrasts/blob/master/doc/fosse_winship2019.html)
-  - A vignette that reanalyzes [the example given in Fosse and
-    Winship 2019](https://htmlpreview.github.io/?https://github.com/elbersb/weightedcontrasts/blob/master/doc/holford1983.html)
+-   The function `contr.poly.weighted`
+-   The dataset `prostate` from Holford 1983 (Table 2)
+-   A vignette that reanalyzes [the example given in Holford
+    1983](https://htmlpreview.github.io/?https://github.com/elbersb/weightedcontrasts/blob/master/doc/fosse_winship2019.html)
+-   A vignette that reanalyzes [the example given in Fosse and Winship
+    2019](https://htmlpreview.github.io/?https://github.com/elbersb/weightedcontrasts/blob/master/doc/holford1983.html)
 
 ## Installation
 
