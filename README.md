@@ -7,9 +7,6 @@
 
 [![CRAN
 Version](https://www.r-pkg.org/badges/version/weightedcontrasts)](https://CRAN.R-project.org/package=weightedcontrasts)
-[![R-CMD-check](https://github.com/elbersb/weightedcontrasts/workflows/R-CMD-check/badge.svg)](https://github.com/elbersb/weightedcontrasts/actions)
-[![Codecov test
-coverage](https://codecov.io/gh/elbersb/weightedcontrasts/branch/master/graph/badge.svg)](https://codecov.io/gh/elbersb/weightedcontrasts?branch=master)
 <!-- badges: end -->
 
 Provides the function `contr.poly.weighted` to apply orthogonal
