@@ -28,7 +28,8 @@ library("ggplot2")
 library("texreg")
 library("weightedcontrasts")
 
-data("wordsum") # from apcR package (https://scholar.harvard.edu/apc/software-0)
+library("apcR") # for wordsum data (get here: https://scholar.harvard.edu/apc/software-0)
+data("wordsum")
 d <- as_tibble(wordsum)
 ```
 
