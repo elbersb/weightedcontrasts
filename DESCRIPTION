@@ -16,8 +16,7 @@ Suggests:
     dplyr,
     ggplot2,
     texreg,
-    covr,
-    apcR
+    covr
 RoxygenNote: 7.1.1
 VignetteBuilder: knitr
 Depends: 
